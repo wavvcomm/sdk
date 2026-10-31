@@ -1,6 +1,6 @@
 {
 	"name": "@wavv/sdk",
-	"version": "0.0.2",
+	"version": "0.0.3",
 	"description": "Embed WAVV's dialer, messenger and callboards in your product",
 	"keywords": [
 		"wavv",
@@ -16,6 +16,9 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/wavvcomm/sdk.git"
+	},
+	"bugs": {
+		"url": "https://sdk.wavv.com"
 	},
 	"author": "WAVV Communications",
 	"license": "MIT",

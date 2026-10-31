@@ -6,4 +6,4 @@
  * cheaper than the generated file the old modules used.
  */
 export const MODULE = 'sdk';
-export const VERSION = '0.0.2';
+export const VERSION = '0.0.3';

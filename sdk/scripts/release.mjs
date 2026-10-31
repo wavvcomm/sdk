@@ -55,7 +55,11 @@ const build = () => {
 const inspectPack = () => {
 	step('Inspecting what npm would ship');
 	// `--ignore-scripts` stops `npm pack` re-entering this script through lifecycle hooks.
-	const [{ files, size, unpackedSize }] = JSON.parse(read('npm', ['pack', '--dry-run', '--json', '--ignore-scripts']));
+	const raw = read('npm', ['pack', '--dry-run', '--json', '--ignore-scripts']);
+	const packed = JSON.parse(raw);
+	// npm ≤ 11 prints a one-element array; npm 12 prints an object keyed by package name.
+	const { files, size, unpackedSize } = (Array.isArray(packed) ? packed[0] : (packed?.[pkg.name] ?? packed)) ?? {};
+	if (!Array.isArray(files)) fail(`Could not read the file list from \`npm pack --json\`. It printed:\n  ${raw.slice(0, 300)}`);
 	const paths = files.map((file) => file.path).sort();
 
 	for (const path of paths) process.stdout.write(`  ${path}\n`);

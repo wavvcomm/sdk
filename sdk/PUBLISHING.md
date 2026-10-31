@@ -19,6 +19,9 @@ covering this version too.
   `eli.wavv`, `raleigh.wavv`, `clintkunz28`).
 - Logged in on the machine you publish from: `npm login`, then `npm whoami` to check. If your account
   has 2FA on writes, npm prompts for a one-time code during publish.
+- The package is published by WAVV Admin through npm trusted publishing from the mirror repository
+  https://github.com/wavvcomm/sdk (workflow `publish.yml`); `package.json`'s `repository.url` must stay exactly
+  `git+https://github.com/wavvcomm/sdk.git` or npm refuses the publish.
 
 ## 2. Bump the version
 
