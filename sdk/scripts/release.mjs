@@ -1,0 +1,145 @@
+#!/usr/bin/env node
+/**
+ * Build, verify and publish `@wavv/sdk`.
+ *
+ *   node scripts/release.mjs build               clean dist, check-actions, compile
+ *   node scripts/release.mjs verify              build, then inspect what `npm pack` would ship
+ *   node scripts/release.mjs publish --dry-run   every publish check, then `npm publish --dry-run`
+ *   node scripts/release.mjs publish             the real thing: publish to npm and tag `sdk-v<version>`
+ *
+ * `verify` also runs as `prepublishOnly`, so a bare `npm publish` cannot ship a stale or unchecked build.
+ * See `PUBLISHING.md` for the order of operations — the core deploy comes first.
+ *
+ * Deliberately dependency-free, because `pnpm install` is not always healthy in this repository.
+ */
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
+
+const SDK = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const pkg = JSON.parse(readFileSync(resolve(SDK, 'package.json'), 'utf8'));
+const TAG = `sdk-v${pkg.version}`;
+
+/** What a published tarball may contain, and what it must. Anything else is a leak. */
+const ALLOWED = /^(package\.json|README\.md|LICENSE|dist\/[a-z]+\.(js|d\.ts))$/;
+const REQUIRED = ['package.json', 'README.md', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
+
+const step = (message) => process.stdout.write(`\n▸ ${message}\n`);
+const fail = (message) => {
+	process.stderr.write(`\n✗ ${message}\n`);
+	process.exit(1);
+};
+const run = (cmd, args, options = {}) => execFileSync(cmd, args, { cwd: SDK, stdio: 'inherit', ...options });
+const read = (cmd, args) => execFileSync(cmd, args, { cwd: SDK, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+/** The sdk's own TypeScript when installed, otherwise the copy front-end already has. */
+const findTsc = () => {
+	const candidates = ['node_modules/.bin/tsc', '../node_modules/.bin/tsc', '../front-end/node_modules/.bin/tsc'];
+	const found = candidates.map((path) => resolve(SDK, path)).find((path) => existsSync(path));
+	return found ?? fail(`No tsc found. Looked in:\n  ${candidates.join('\n  ')}`);
+};
+
+const build = () => {
+	step('Cleaning dist/');
+	rmSync(resolve(SDK, 'dist'), { recursive: true, force: true });
+
+	step('Checking action names and version against core');
+	run('node', ['scripts/check-actions.mjs']);
+
+	step('Compiling');
+	run(findTsc(), ['-p', 'tsconfig.build.json']);
+};
+
+const inspectPack = () => {
+	step('Inspecting what npm would ship');
+	// `--ignore-scripts` stops `npm pack` re-entering this script through lifecycle hooks.
+	const [{ files, size, unpackedSize }] = JSON.parse(read('npm', ['pack', '--dry-run', '--json', '--ignore-scripts']));
+	const paths = files.map((file) => file.path).sort();
+
+	for (const path of paths) process.stdout.write(`  ${path}\n`);
+	process.stdout.write(`  ${paths.length} files, ${(size / 1024).toFixed(1)} kB packed, ${(unpackedSize / 1024).toFixed(1)} kB unpacked\n`);
+
+	const leaked = paths.filter((path) => !ALLOWED.test(path));
+	const missing = REQUIRED.filter((path) => !paths.includes(path));
+	if (leaked.length) fail(`The package would ship files it should not:\n  ${leaked.join('\n  ')}`);
+	if (missing.length) fail(`The package is missing:\n  ${missing.join('\n  ')}`);
+};
+
+const verify = () => {
+	build();
+	inspectPack();
+	process.stdout.write(`\n✓ ${pkg.name}@${pkg.version} is built and ships only what it should.\n`);
+};
+
+/** Ask a question and require the exact answer. Anything else aborts. */
+const confirm = async (question, expected) => {
+	const prompt = createInterface({ input: process.stdin, output: process.stdout });
+	const answer = (await prompt.question(`\n${question} `)).trim();
+	prompt.close();
+	if (answer !== expected) fail('Aborted. Nothing was published.');
+};
+
+const publish = async ({ dryRun }) => {
+	step('Checking npm login');
+	try {
+		process.stdout.write(`  logged in as ${read('npm', ['whoami', '--registry', pkg.publishConfig.registry])}\n`);
+	} catch {
+		const problem = 'Not logged in to npm. Run `npm login` and try again.';
+		if (!dryRun) fail(problem);
+		process.stdout.write(`  ! ${problem}\n`);
+	}
+
+	step('Checking git');
+	const branch = read('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+	const dirty = read('git', ['status', '--porcelain', '--', '.']);
+	const problems = [
+		dirty && `sdk/ has uncommitted changes — publish only what is committed:\n${dirty}`,
+		branch !== 'master' && `On ${branch}. Publish from master, after the core it needs is deployed.`,
+		read('git', ['tag', '--list', TAG]) && `Tag ${TAG} already exists. Bump the version first.`,
+	].filter(Boolean);
+	// A dry run reports these and carries on, so the rest of the pipeline can be rehearsed from a branch.
+	if (problems.length && !dryRun) fail(problems.join('\n'));
+	for (const problem of problems) process.stdout.write(`  ! ${problem}\n`);
+	if (!problems.length) process.stdout.write(`  ${branch}, sdk/ clean, ${TAG} is free\n`);
+
+	step('Checking the version is unpublished');
+	try {
+		read('npm', ['view', `${pkg.name}@${pkg.version}`, 'version']);
+		fail(`${pkg.name}@${pkg.version} is already on npm. Bump the version in package.json and src/version.ts.`);
+	} catch (error) {
+		// `npm view` exits non-zero with E404 for an unpublished version or a package that does not exist yet.
+		if (!String(error.stderr ?? error.message).includes('E404')) throw error;
+	}
+	process.stdout.write(`  ${pkg.version} is free\n`);
+
+	verify();
+
+	if (dryRun) {
+		step('npm publish --dry-run');
+		run('npm', ['publish', '--dry-run', '--ignore-scripts']);
+		process.stdout.write(`\n✓ Dry run complete. Nothing was published and no tag was created.\n`);
+		return;
+	}
+
+	await confirm('Is every core change this release needs deployed to PRODUCTION? Type "deployed":', 'deployed');
+	await confirm(`This publishes ${pkg.name}@${pkg.version} publicly and permanently. Type the version to continue:`, pkg.version);
+
+	step('Publishing');
+	// The build was verified above; skipping `prepublishOnly` avoids building it a second time.
+	run('npm', ['publish', '--ignore-scripts']);
+
+	step(`Tagging ${TAG}`);
+	run('git', ['tag', '-a', TAG, '-m', `${pkg.name}@${pkg.version}`]);
+	run('git', ['push', 'origin', TAG]);
+
+	process.stdout.write(`\n✓ Published ${pkg.name}@${pkg.version} — https://www.npmjs.com/package/${pkg.name}\n`);
+};
+
+const [command, ...flags] = process.argv.slice(2);
+
+if (command === 'build') build();
+else if (command === 'verify') verify();
+else if (command === 'publish') await publish({ dryRun: flags.includes('--dry-run') });
+else fail('Usage: node scripts/release.mjs build | verify | publish [--dry-run]');

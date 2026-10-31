@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>@wavv/sdk harness</title>
+		<style>
+			:root {
+				--bg: #16181d;
+				--panel: #1e2128;
+				--line: #2b2f38;
+				--text: #e7e9ee;
+				--muted: #949aa6;
+				--ok: #5ec98a;
+				--bad: #e8736b;
+				--accent: #7aa2f7;
+			}
+			* { box-sizing: border-box; }
+			body {
+				margin: 0;
+				padding: 16px;
+				background: var(--bg);
+				color: var(--text);
+				font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+			}
+			h1 { font-size: 15px; margin: 0 0 4px; }
+			.sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+			.cols { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 16px; align-items: start; }
+			@media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+			section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+			h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; }
+			button {
+				font: inherit;
+				background: #262a33;
+				color: var(--text);
+				border: 1px solid var(--line);
+				border-radius: 6px;
+				padding: 6px 10px;
+				margin: 0 6px 6px 0;
+				cursor: pointer;
+			}
+			button:hover { border-color: var(--accent); }
+			button:disabled { opacity: 0.45; cursor: not-allowed; }
+			input { font: inherit; width: 100%; margin-bottom: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: #262a33; color: var(--text); }
+			#log { font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; max-height: 70vh; overflow: auto; margin: 0; }
+			.row { display: flex; gap: 8px; align-items: baseline; }
+			.t { color: var(--muted); flex: 0 0 62px; }
+			.ok { color: var(--ok); }
+			.bad { color: var(--bad); }
+			.ev { color: var(--accent); }
+		</style>
+	</head>
+	<body>
+		<h1>@wavv/sdk harness</h1>
+		<div class="sub" id="status">loading…</div>
+
+		<div class="cols">
+			<div>
+				<section>
+					<h2>Lifecycle</h2>
+					<button data-call="init">init</button>
+					<button data-call="reinit">init again</button>
+				</section>
+				<section>
+					<h2>Products</h2>
+					<button data-call="dialerShow">dialer.show</button>
+					<button data-call="messengerShow">messenger.show</button>
+					<button data-call="callboardsShow">callboards.show</button>
+				</section>
+				<section>
+					<h2>show(target)</h2>
+					<button data-call="showCallHistory">CALL_HISTORY</button>
+					<button data-call="showBilling">BILLING</button>
+					<button data-call="showNumbers">NUMBERS</button>
+					<button data-call="showTeam">TEAM</button>
+					<button data-call="showCallScripts">CALL_SCRIPTS</button>
+					<button data-call="showSettings">SETTINGS</button>
+				</section>
+				<section>
+					<h2>Dialer actions</h2>
+					<button data-call="call">call Eric Echo</button>
+					<button data-call="createCallList">createCallList</button>
+					<button data-call="addContact">addContact</button>
+					<button data-call="addPhone">addPhone</button>
+					<button data-call="removePhone">removePhone</button>
+					<button data-call="removeContact">removeContact</button>
+					<button data-call="pauseRecording">pauseRecording</button>
+					<button data-call="startRecording">startRecording</button>
+				</section>
+				<section>
+					<h2>Messenger</h2>
+					<button data-call="compose">compose</button>
+					<button data-call="openConversation">openConversation</button>
+				</section>
+				<section>
+					<h2>Open by id</h2>
+					<input id="ids" placeholder="listId / conversationId / boardId" />
+					<button data-call="openCallList">openCallList</button>
+					<button data-call="openBoard">openBoard</button>
+				</section>
+			</div>
+
+			<section>
+				<h2>Log</h2>
+				<div id="log"></div>
+			</section>
+		</div>
+
+		<script type="module">
+			import wavv from '/dist/index.js';
+
+			const logEl = document.getElementById('log');
+			const statusEl = document.getElementById('status');
+
+			const log = (msg, cls = '') => {
+				const t = new Date().toISOString().slice(11, 19);
+				const row = document.createElement('div');
+				row.className = 'row';
+				row.innerHTML = `<span class="t">${t}</span><span class="${cls}"></span>`;
+				row.lastElementChild.textContent = msg;
+				logEl.prepend(row);
+			};
+
+			window.addEventListener('unhandledrejection', (e) => log(`unhandled rejection: ${e.reason}`, 'bad'));
+
+			/** Run one SDK call and report how it settled. The point of the harness is which of these reject. */
+			const run = async (name, fn) => {
+				log(`→ ${name}`);
+				try {
+					const result = await fn();
+					log(`✓ ${name}${result === undefined ? '' : ` → ${JSON.stringify(result)}`}`, 'ok');
+				} catch (err) {
+					log(`✗ ${name} → ${err?.message ?? err}`, 'bad');
+				}
+			};
+
+			const getToken = async () => {
+				const res = await fetch('/api/token');
+				if (!res.ok) throw new Error(`token endpoint ${res.status}`);
+				return res.json();
+			};
+
+			// Exposed so ad-hoc calls can be made from the console — the published package is a module.
+			window.wavv = wavv;
+
+			/** Whatever id is in the box. One field, since only one open-by-id call runs at a time. */
+			const id = () => document.getElementById('ids').value.trim();
+
+			const contact = { id: 'demo-4', name: 'Eric Echo', number: '9585550060' };
+			const second = { id: 'demo-2', name: 'Alice Answer', number: '9587770050' };
+
+			const actions = {
+				init: async () => {
+					const { token, server, userId } = await getToken();
+					statusEl.textContent = `server ${server} · user ${userId}`;
+					return run('init', () => wavv.init({ token, server }));
+				},
+				reinit: async () => {
+					const { token, server } = await getToken();
+					return run('init (again)', () => wavv.init({ token, server }));
+				},
+
+				dialerShow: () => run('dialer.show', () => wavv.dialer.show()),
+				messengerShow: () => run('messenger.show', () => wavv.messenger.show()),
+				callboardsShow: () => run('callboards.show', () => wavv.callboards.show()),
+				showCallHistory: () => run("show CALL_HISTORY", () => wavv.show('CALL_HISTORY', { type: 'OUTBOUND' })),
+				showBilling: () => run('show BILLING', () => wavv.show('BILLING')),
+				showNumbers: () => run('show NUMBERS', () => wavv.show('NUMBERS')),
+				showTeam: () => run('show TEAM', () => wavv.show('TEAM')),
+				showSettings: () => run('show SETTINGS', () => wavv.show('SETTINGS')),
+				showCallScripts: () => run('show CALL_SCRIPTS', () => wavv.show('CALL_SCRIPTS')),
+
+				call: () => run('dialer.call', () => wavv.dialer.call({ contact })),
+				openConversation: () => run('messenger.openConversation', () => wavv.messenger.openConversation({ conversationId: id() })),
+				openCallList: () => run('dialer.openCallList', () => wavv.dialer.openCallList({ listId: id() })),
+				openBoard: () => run('callboards.openBoard', () => wavv.callboards.openBoard({ boardId: id() })),
+
+				compose: () => run('messenger.compose', () => wavv.messenger.compose({ contact, body: 'harness test' })),
+				createCallList: () => run('dialer.createCallList', () => wavv.dialer.createCallList({ name: 'Harness list', contacts: [contact] })),
+				addContact: () => run('dialer.addContact', () => wavv.dialer.addContact({ contact: second })),
+				addPhone: () => run('dialer.addPhone', () => wavv.dialer.addPhone({ number: '9587770040', contactId: contact.id })),
+				removePhone: () => run('dialer.removePhone', () => wavv.dialer.removePhone({ number: '9587770040' })),
+				removeContact: () => run('dialer.removeContact', () => wavv.dialer.removeContact({ contactId: second.id })),
+				pauseRecording: () => run('dialer.pauseRecording', () => wavv.dialer.pauseRecording()),
+				startRecording: () => run('dialer.startRecording', () => wavv.dialer.startRecording()),
+			};
+
+			for (const button of document.querySelectorAll('[data-call]')) {
+				button.addEventListener('click', () => actions[button.dataset.call]?.());
+			}
+
+			// Callbacks register before init, which also exercises the transport's buffering.
+			wavv.dialer.onCallStarted((c) => log(`dialer.onCallStarted ${JSON.stringify(c)}`, 'ev'));
+			wavv.dialer.onCallAnswered((c) => log(`dialer.onCallAnswered ${JSON.stringify(c)}`, 'ev'));
+			wavv.dialer.onCallIncoming((c) => log(`dialer.onCallIncoming ${JSON.stringify(c)}`, 'ev'));
+			wavv.dialer.onCallEnded((c) => log(`dialer.onCallEnded ${JSON.stringify(c)}`, 'ev'));
+			wavv.dialer.onCallRecorded((c) => log(`dialer.onCallRecorded ${JSON.stringify(c)}`, 'ev'));
+			wavv.dialer.onDispositionSet((d) => log(`dialer.onDispositionSet ${JSON.stringify(d)}`, 'ev'));
+			wavv.messenger.onMessageSent((m) => log(`messenger.onMessageSent ${JSON.stringify(m)}`, 'ev'));
+			wavv.messenger.onMessageReceived((m) => log(`messenger.onMessageReceived ${JSON.stringify(m)}`, 'ev'));
+			wavv.messenger.onMessageFailed((m) => log(`messenger.onMessageFailed ${JSON.stringify(m)}`, 'ev'));
+			wavv.onOpenContact((p) => log(`onOpenContact ${JSON.stringify(p)}`, 'ev'));
+			wavv.onContactSearch(({ query }) => {
+				// Deliberately a contact WAVV has never heard of, so a result that reaches the picker can only
+				// have come from here.
+				const fromHost = { id: `host-${query}`, name: `Host Result ${query}`, number: '9586660123' };
+				log(`onContactSearch "${query}" -> 1 result`, 'ev');
+				return [fromHost];
+			});
+
+			log('harness ready — callbacks registered before init');
+			actions.init();
+		</script>
+	</body>
+</html>
