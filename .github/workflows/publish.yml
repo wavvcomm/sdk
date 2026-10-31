@@ -1,0 +1,35 @@
+# Publishes @wavv/sdk to npm. Triggered only by pushing a tag v<version>, which WAVV Admin's release
+# tooling does after exporting sdk/ + common/src/types.js from storm. This workflow is the only thing
+# that can publish @wavv/sdk: npm trusted publishing (OIDC) — there is no npm token anywhere.
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency: publish
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest # trusted publishing needs npm >= 11.5.1
+      - name: Tag must match package.json version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"; exit 1; }
+      - run: npm install --no-audit --no-fund
+      - run: node scripts/release.mjs verify
+      # verify above already built and checked; --ignore-scripts skips prepublishOnly's second build.
+      - run: npm publish --provenance --access public --ignore-scripts
