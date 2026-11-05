@@ -8,6 +8,8 @@
  * 15 tabs of which 7 were dead.
  *
  * Also asserts `VERSION` matches `package.json`, since it is stamped onto every dispatched action.
+ * `src/version.ts` is generated from `package.json` by `scripts/release.mjs build`, so a mismatch means
+ * that step did not run (or the file was edited by hand).
  *
  * Deliberately dependency-free: `node scripts/check-actions.mjs`.
  */

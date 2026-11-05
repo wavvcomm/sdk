@@ -1,6 +1,6 @@
 {
 	"name": "@wavv/sdk",
-	"version": "0.0.3",
+	"version": "0.1.0",
 	"description": "Embed WAVV's dialer, messenger and callboards in your product",
 	"keywords": [
 		"wavv",
@@ -43,6 +43,7 @@
 		"release": "node scripts/release.mjs publish",
 		"release:dry": "node scripts/release.mjs publish --dry-run",
 		"prepublishOnly": "node scripts/release.mjs verify",
+		"test": "node --test scripts/*.test.mjs",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"lint": "biome lint",
 		"fix": "biome lint --fix",

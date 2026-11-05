@@ -25,8 +25,9 @@ covering this version too.
 
 ## 2. Bump the version
 
-Set the same version in `package.json` and `src/version.ts` (`check-actions` fails if they differ), add a
-line to the changelog below, and commit. Under 0.x, a breaking change bumps the minor (0.1 → 0.2);
+Set the version in `package.json` only. `src/version.ts` is generated from it by the build
+(`node scripts/release.mjs build` or `verify`) — run one, add a line to the changelog below, and commit both
+files (`check-actions` fails if they differ). Under 0.x, a breaking change bumps the minor (0.1 → 0.2);
 anything else bumps the patch.
 
 ## 3. Rehearse

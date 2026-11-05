@@ -85,9 +85,8 @@ export const OPEN_MESSENGER_THREAD = 'OPEN_MESSENGER_THREAD';
  */
 export const DOCK = { dock: true };
 
+/** Opens the boards list, or one board when given a `boardId`. */
 export const SHOW_CALLBOARDS = 'SHOW_CALLBOARDS';
-/** Open one callboard by id. Declared in core for years with no handler; now wired. */
-export const START_CALLBOARD = 'START_CALLBOARD';
 
 export const SHOW_CALL_HISTORY = 'SHOW_CALL_HISTORY';
 export const SHOW_CALL_SCRIPTS_DOCK_LIST = 'SHOW_CALL_SCRIPTS_DOCK_LIST';

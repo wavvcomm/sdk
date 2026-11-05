@@ -29,6 +29,24 @@ export const CHROME_DISMISS_NOTIFICATION = 'CHROME_DISMISS_NOTIFICATION';
 export const CHROME_START_RINGTONE = 'CHROME_START_RINGTONE';
 export const CHROME_STOP_RINGTONE = 'CHROME_STOP_RINGTONE';
 export const CHROME_FOCUS_APP_SURFACE = 'CHROME_FOCUS_APP_SURFACE';
+// Get Chrome's mic prompt in front of the user (chromeMicBar middleware picks where). As a Redux action from Manager or
+// onboarding, payload { state }. As a command to the extension: { state } opens the mic-only Set up WAVV window (during
+// onboarding, when Manager isn't open to the user yet); { state, manager: true } has the extension open Manager in a
+// WAVV window in Auto and Current Tab modes, since on a CRM page the prompt and grant would be the CRM's.
+export const CHROME_OPEN_MIC_PERMISSION = 'CHROME_OPEN_MIC_PERMISSION';
+// storm-js → extension (also a Redux action from Manager and the side panel): open WAVV's site settings in a tab, the
+// only place a mic Chrome blocks can be allowed again.
+export const CHROME_OPEN_MIC_SETTINGS = 'CHROME_OPEN_MIC_SETTINGS';
+// Extension offscreen → storm-js: the extension origin's mic permission ('granted' | 'prompt' | 'denied').
+export const CHROME_MIC_PERMISSION_STATE = 'CHROME_MIC_PERMISSION_STATE';
+// storm-js session: a computer-audio call couldn't open the mic, so the side panel shows its mic banner. Payload
+// { reason }: 'prompt' (not allowed yet) or 'denied' (blocked in Chrome) clear once it's allowed; 'device' (Chrome
+// allows it, the computer or device doesn't) clears once a call opens the mic (MIC_OPENED).
+export const CHROME_MIC_NEEDED = 'CHROME_MIC_NEEDED';
+// socket.js → storm-js: a computer-audio call opened the mic.
+export const MIC_OPENED = 'MIC_OPENED';
+// Side panel app (wavv-app) → storm-js: the mic banner's Allow button was clicked; gets Chrome's prompt shown again.
+export const CHROME_MIC_BAR_CLICKED = 'CHROME_MIC_BAR_CLICKED';
 // Chrome's linked wavv-auth. Offscreen storm-js owns the sign-in and the seat question through a wavv-auth nobody can
 // see; the side panel embeds a second one as the screen (sidepanel.html) and follows the `wavvAuth` slice these drive.
 export const WAVV_AUTH_PERSON_NEEDED = 'WAVV_AUTH_PERSON_NEEDED'; // the offscreen fragment has a screen for a person
@@ -165,6 +183,12 @@ export const CURRENT_CALLSCRIPTS_CONTACT_UPDATED = 'CURRENT_DIALER_CONTACT_UPDAT
 export const SET_CURRENT_CALLSCRIPTS_CONTACT = 'SET_CURRENT_CALLSCRIPTS_CONTACT';
 export const OPEN_SETTINGS_FROM_EXTERNAL = 'OPEN_SETTINGS_FROM_EXTERNAL';
 export const SHOW_CALL_SCRIPTS_DOCK_LIST_FROM_EXTERNAL = 'SHOW_CALL_SCRIPTS_DOCK_LIST_FROM_EXTERNAL';
+/**
+ * The app asking the host page to show the person their WAVV account — wavv-auth's account screen, which has the
+ * team-code entry and the sign-out that the setup journey lacks (INT-179). storm-js relays it to the snippet
+ * (`requestAuthAccount` in dom.js).
+ */
+export const OPEN_WAVV_ACCOUNT_FROM_EXTERNAL = 'OPEN_WAVV_ACCOUNT_FROM_EXTERNAL';
 export const SET_CREATE_TEMPLATE = 'SET_CREATE_TEMPLATE';
 export const SET_EDIT_SCRIPT_ID = 'SET_EDIT_SCRIPT_ID';
 
@@ -204,9 +228,16 @@ export const CALLBOARD_REMOVE_LEAD_FROM_STAGE_ACTION = 'CALLBOARD_REMOVE_LEAD_FR
 export const REMOVE_ALL_CONTACTS_FROM_STAGE = 'REMOVE_ALL_CONTACTS_FROM_STAGE';
 export const REMOVE_ALL_CONTACTS_FROM_STAGE_COMPLETE = 'REMOVE_ALL_CONTACTS_FROM_STAGE_COMPLETE';
 export const REMOVE_ALL_CONTACTS_FROM_STAGE_FAILED = 'REMOVE_ALL_CONTACTS_FROM_STAGE_FAILED';
+// Bulk actions: the board's running progress rows (`bulk_actions`), seeded by GET .../bulk-actions/active and then
+// kept current by CALLBOARD_EVENT_BULK_ACTION_PROGRESS; a client dismisses a finished row once it has reported it.
+export const GET_CALLBOARD_BULK_ACTIONS = 'GET_CALLBOARD_BULK_ACTIONS';
+export const GET_CALLBOARD_BULK_ACTION = 'GET_CALLBOARD_BULK_ACTION';
+export const SET_CALLBOARD_BULK_ACTIONS = 'SET_CALLBOARD_BULK_ACTIONS';
+export const DISMISS_CALLBOARD_BULK_ACTION = 'DISMISS_CALLBOARD_BULK_ACTION';
 export const SET_GHL_TAGS = 'SET_GHL_TAGS';
 export const SET_GHL_WORKFLOWS = 'SET_GHL_WORKFLOWS';
 export const DELETE_CALLBOARD_STAGE = 'DELETE_CALLBOARD_STAGE';
+export const DELETE_CALLBOARD_STAGE_FAILED = 'DELETE_CALLBOARD_STAGE_FAILED';
 export const UPDATE_CALLBOARD = 'UPDATE_CALLBOARD';
 export const CALLBOARD_DELETED = 'CALLBOARD_DELETED';
 export const DELETE_CALLBOARD_ACTION = 'DELETE_CALLBOARD_ACTION';
@@ -305,6 +336,7 @@ export const CALL_SCHEDULED = 'CALL_SCHEDULED';
 export const SCHEDULED_CALLS_BECAME_READY = 'SCHEDULED_CALLS_BECAME_READY';
 export const CONFIRM_SCHEDULED_CALL = 'CONFIRM_SCHEDULED_CALL';
 export const CANCEL_SCHEDULED_CALL = 'CANCEL_SCHEDULED_CALL';
+export const CAMPAIGN_SKIP_CONTACT = 'CAMPAIGN_SKIP_CONTACT';
 export const ADD_SCHEDULE_CALL = 'ADD_SCHEDULE_CALL';
 export const REMOVE_SCHEDULE_CALL = 'REMOVE_SCHEDULE_CALL';
 
@@ -365,6 +397,7 @@ export const DIALOG_CONFIRM = 'DIALOG_CONFIRM';
 
 export const BUTTON_CLOSE = 'BUTTON_CLOSE';
 export const BUTTON_DIAL = 'BUTTON_DIAL';
+export const BUTTON_SKIP = 'BUTTON_SKIP';
 export const BUTTON_DROP_VM = 'BUTTON_DROP_VM';
 export const BUTTON_HANGUP = 'BUTTON_HANGUP';
 export const BUTTON_LEFT_DIALOG = 'BUTTON_LEFT_DIALOG';
@@ -420,17 +453,29 @@ export const CALL_POP_END = 'CALL_POP_END';
 export const PUSH_SUBSCRIBE = 'PUSH_SUBSCRIBE';
 
 export const FOCUSED_TAB = 'FOCUSED_TAB';
+/** A calling session an AI assistant got ready (WAVV MCP `prepare_campaign`), delivered to one tab to Start. */
+export const CAMPAIGN_PREPARED = 'CAMPAIGN_PREPARED';
+/** Fetch a prepared campaign by id (the link path: `?wavvPrepared=<id>` on page load). */
+export const GET_PREPARED_CAMPAIGN = 'GET_PREPARED_CAMPAIGN';
+/** A prepared campaign's link was opened after it expired (or by someone else): the tab says so. */
+export const PREPARED_CAMPAIGN_UNAVAILABLE = 'PREPARED_CAMPAIGN_UNAVAILABLE';
+/** The person pressed Start on a prepared campaign's prompt. */
+export const START_PREPARED_CAMPAIGN = 'START_PREPARED_CAMPAIGN';
 export const MONITOR_CONNECT = 'MONITOR_CONNECT'; // begin connecting to monitor
 export const MONITOR_CONNECTED = 'MONITOR_CONNECTED'; // someone connected to monitor you
 export const MONITOR_DISCONNECTED = 'MONITOR_DISCONNECTED'; // disconnect from monitor
 export const MONITOR_DISCONNECT = 'MONITOR_DISCONNECT'; // someone disconnected from monitoring you
 export const MONITORING_STATUS = 'MONITORING_STATUS'; // status of monitoring changed, barge, whisper, etc
 export const MONITOR_REJECTED = 'MONITOR_REJECTED'; // target could not be monitored
+export const MONITOR_ENDED = 'MONITOR_ENDED'; // the monitored member's session ended; sent to the manager
 
 // reasons a monitor request was rejected (MONITOR_REJECTED payload)
 export const MONITOR_REJECT_NOT_ON_CALL = 'not-on-call'; // target is not on an active call
 export const MONITOR_REJECT_ALREADY_MONITORED = 'already-monitored'; // target is already being monitored
 export const MONITOR_REJECT_BUSY_MONITORING = 'busy-monitoring'; // target is monitoring another call
+export const MONITOR_REJECT_NO_PERMISSION = 'no-permission'; // requester's team role cannot monitor
+export const MONITOR_REJECT_FAILED = 'failed'; // request reached the pbx but could not be connected
+export const MONITOR_REJECT_NOT_CONNECTED = 'not-connected'; // no dialer process holds the target's store
 
 export const USER_VALUE_CHANGED = 'USER_VALUE_CHANGED';
 
@@ -438,6 +483,13 @@ export const MONITOR_STATUS_CONNECTING = 'MONITOR_STATUS_CONNECTING';
 export const MONITOR_STATUS_MONITOR = 'MONITOR_STATUS_MONITOR';
 export const MONITOR_STATUS_WHISPER = 'MONITOR_STATUS_WHISPER';
 export const MONITOR_STATUS_BARGE = 'MONITOR_STATUS_BARGE';
+
+// session.monitoring is only a placeholder until the target's dialer process hands back its session id (MONITOR_CONNECT)
+export const monitorHandoffComplete = (monitoring) => !!monitoring?.sessionId;
+// how long a monitor request may wait for the target's dialer process before it counts as unanswered
+export const MONITOR_REQUEST_TIMEOUT = 12000;
+// the client gives the server's own timeout a head start so the reject names the member instead of "timed out"
+export const MONITOR_REQUEST_CLIENT_TIMEOUT = MONITOR_REQUEST_TIMEOUT + 3000;
 
 export const REQUEST_DIALER = 'REQUEST_DIALER';
 export const USE_DIALER = 'USE_DIALER';
@@ -624,6 +676,11 @@ export const LAYOUT_TRANSFER_BRIDGED = 'LAYOUT_TRANSFER_BRIDGED';
 export const LAYOUT_TRANSFER_MERGED = 'LAYOUT_TRANSFER_MERGED';
 export const LAYOUT_TRANSFER_ENDED = 'LAYOUT_TRANSFER_ENDED';
 export const LAYOUT_INBOUND = 'LAYOUT_INBOUND';
+/**
+ * The dialer layouts with no call going on: not opened, ready to start, connecting, or a finished campaign. Any other
+ * layout means a call or calling session is under way, which a prepared session from an AI assistant waits behind.
+ */
+export const DIALER_IDLE_LAYOUTS = ['', LAYOUT_READY, LAYOUT_READY_CONNECTING, LAYOUT_COMPLETE];
 
 export const REFRESH_SETTINGS = 'REFRESH_SETTINGS';
 export const LOAD_SETTINGS = 'LOAD_SETTINGS';
@@ -769,6 +826,9 @@ export const WIDGET_MESSENGER_DOCK_CONVERSATION = 'messenger-dock-conversation';
 export const WIDGET_CALL_SCRIPTS_DOCK_LIST = 'call-scripts-dock-list';
 export const WIDGET_CALL_SCRIPTS_WINDOW = 'call-scripts-window';
 export const WIDGET_SIDEPANEL = 'sidepanel';
+// Feature flag names storm-js reads. The full list is FEATURE_FLAGS in @wavv/common-schemas, which storm-js cannot
+// import; these mirror it and back-end/src/utils/userFeatureFlags.test.ts pins them to it.
+export const FEATURE_HIDE_CALL_SCRIPTS = 'hideCallScripts';
 export const FEATURE_SIDEPANEL_MESSENGER = 'sidepanelMessenger';
 // Statsig gate `wavv_journey` for a GHL vendor, or an identity that has already entered the account through
 // wavv-auth (the same answer GHL's /v2/auth gives as `wavvAccountsFeatureFlag`): the side panel's CRM seat is
@@ -894,6 +954,11 @@ export const TAB_INBOUND_CALL_LOGS = 'TAB_INBOUND_CALL_LOGS';
 export const TAB_BETA = 'TAB_BETA';
 export const TAB_SUBSCRIPTION = 'TAB_SUBSCRIPTION';
 export const TAB_USAGE = 'TAB_USAGE';
+// Reports nav group sub-pages (callboardReports flag); TAB_USAGE stays the Overview so existing links still land
+export const TAB_REPORTS_TEAM = 'TAB_REPORTS_TEAM';
+export const TAB_REPORTS_DISPOSITIONS = 'TAB_REPORTS_DISPOSITIONS';
+export const TAB_REPORTS_NUMBERS = 'TAB_REPORTS_NUMBERS';
+export const TAB_REPORTS_CALL_BOARDS = 'TAB_REPORTS_CALL_BOARDS';
 export const TAB_LOCATIONS = 'TAB_LOCATIONS';
 export const TAB_DISPOSITIONS = 'TAB_DISPOSITIONS';
 export const TAB_AFFILIATES = 'TAB_AFFILIATES';
@@ -932,6 +997,10 @@ export const WAVV_TAB_TYPES = [
 	TAB_BETA,
 	TAB_SUBSCRIPTION,
 	TAB_USAGE,
+	TAB_REPORTS_TEAM,
+	TAB_REPORTS_DISPOSITIONS,
+	TAB_REPORTS_NUMBERS,
+	TAB_REPORTS_CALL_BOARDS,
 	TAB_WEBCART,
 	TAB_ACCOUNT,
 ];
@@ -1189,6 +1258,8 @@ export const DRAG_END = 'DRAG_END';
 export const TOAST_ERROR_TIMEOUT = 7000;
 
 export const SPOTIFY_LINKED = 'SPOTIFY_LINKED';
+export const SPOTIFY_LINK_RESULT = 'SPOTIFY_LINK_RESULT';
+export const SPOTIFY_UNLINK = 'SPOTIFY_UNLINK';
 export const SPOTIFY_TOKEN = 'SPOTIFY_TOKEN';
 
 export const WAVV_BRAND_UPDATED = 'WAVV_BRAND_REGISTRATION_UPDATED';
@@ -1220,7 +1291,6 @@ export const STEP_VERIFY_EMAIL = 'STEP_VERIFY_EMAIL';
 export const STEP_FIX_TEAM_SUB_OVERFLOW = 'STEP_FIX_TEAM_SUB_OVERFLOW';
 
 // team subscription base sub or wallet failed payment step
-export const STEP_ACCOUNT_PAUSED_BILLING_OVERDUE = 'STEP_ACCOUNT_PAUSED_BILLING_OVERDUE';
 
 // account deactivated step - shown when team was recently archived due to payment failure
 export const STEP_ACCOUNT_DEACTIVATED = 'STEP_ACCOUNT_DEACTIVATED';
@@ -1690,6 +1760,11 @@ export const DEFAULT_DISPOSITION_NAME_SYSTEM_CALLBACK = 'System Callback';
 export const DEFAULT_DISPOSITION_NAME_CALL_BLOCKED = 'Call Blocked';
 export const DEFAULT_DISPOSITION_NAME_WON = 'Won';
 
+// The choosable stock dispositions (Follow Up, Appointment Set, Not Interested, Wrong Number, Won) are CUSTOM on
+// purpose. They belong to the user, who can rename them to mean anything, while the category stays fixed and is never
+// shown. A system category on them (APPOINTMENT_SET, WRONG_NUMBER, ...) would keep driving reports, sticky numbers and
+// the locked Cleanup rule after a rename, and the user would have no way to know. Give a disposition meaning through
+// the board's outcome rules instead. Do Not Contact and the dialer-written required rows are the exceptions.
 export const DEFAULT_CALLBOARD_DISPOSITIONS = [
 	// custom dispositions
 	{
@@ -1859,6 +1934,8 @@ export const WALLET_ACTION_TYPES = {
 	WALLET_RECHARGED: 'WALLET_RECHARGED',
 	WALLET_SHORTFALL_RECHARGE: 'WALLET_SHORTFALL_RECHARGE',
 	WALLET_REFUND: 'WALLET_REFUND',
+	// The previous owner's balance arriving with a team ownership transfer (BIL-841): not a card charge.
+	WALLET_BALANCE_TRANSFER: 'WALLET_BALANCE_TRANSFER',
 	MONTHLY_INCLUDED_CREDIT: 'MONTHLY_INCLUDED_CREDIT',
 	TRIAL_STARTER_CREDIT: 'TRIAL_STARTER_CREDIT',
 	PROMO_CREDIT: 'PROMO_CREDIT',
@@ -2461,6 +2538,7 @@ export const CALLBOARDS_FILTER_STATUS_HOT = 'HOT';
 export const CALLBOARDS_FILTER_STATUS_SCHEDULED = 'SCHEDULED';
 export const CALLBOARDS_FILTER_STATUS_OVERDUE = 'OVERDUE';
 export const CALLBOARDS_FILTER_STATUS_SNOOZED = 'SNOOZED';
+export const CALLBOARDS_FILTER_STATUS_DNC = 'DNC';
 
 // Priority Stack Management
 export const CREATE_CALLBOARD_PRIORITY_STACK = 'CREATE_CALLBOARD_PRIORITY_STACK';
@@ -3058,7 +3136,7 @@ export const AREA_CODES = {
 	},
 	236: {
 		code: '236',
-		offset: -8,
+		offset: -7,
 		state: 'BC',
 		country: 'CA',
 		lat: 49.284477,
@@ -3114,7 +3192,7 @@ export const AREA_CODES = {
 	},
 	250: {
 		code: '250',
-		offset: -8,
+		offset: -7,
 		state: 'BC',
 		country: 'CA',
 		lat: 54.000088,
@@ -3162,7 +3240,7 @@ export const AREA_CODES = {
 	},
 	257: {
 		code: '257',
-		offset: -8,
+		offset: -7,
 		state: 'BC',
 		country: 'CA',
 		lat: 49.284477,
@@ -4656,7 +4734,7 @@ export const AREA_CODES = {
 	},
 	604: {
 		code: '604',
-		offset: -8,
+		offset: -7,
 		state: 'BC',
 		country: 'CA',
 		lat: 49.284477,
@@ -5032,7 +5110,7 @@ export const AREA_CODES = {
 	},
 	672: {
 		code: '672',
-		offset: -8,
+		offset: -7,
 		state: 'BC',
 		country: 'CA',
 		lat: 49.284477,
@@ -5540,7 +5618,7 @@ export const AREA_CODES = {
 	},
 	778: {
 		code: '778',
-		offset: -8,
+		offset: -7,
 		state: 'BC',
 		country: 'CA',
 		lat: 49.284477,
@@ -6578,6 +6656,10 @@ export const CALLBOARD_EVENT_IMPORTS_UPDATED = 'CALLBOARD_EVENT_IMPORTS_UPDATED'
 // path; the array events above stay rare.
 export const CALLBOARD_EVENT_DATA_SOURCES_PROGRESS = 'CALLBOARD_EVENT_DATA_SOURCES_PROGRESS';
 export const CALLBOARD_EVENT_IMPORTS_PROGRESS = 'CALLBOARD_EVENT_IMPORTS_PROGRESS';
+// A bulk action's progress row (`bulk_actions`: total / succeeded / failed / skipped), published when the job
+// starts and after every chunk, keyed by boardId. Absolute counts, never deltas (publisher:
+// back-end/src/utils/callboards/redisEvents/bulkActions.ts).
+export const CALLBOARD_EVENT_BULK_ACTION_PROGRESS = 'CALLBOARD_EVENT_BULK_ACTION_PROGRESS';
 // --------------------------------------------- //
 
 // ----------- CRM Detection ----------- //

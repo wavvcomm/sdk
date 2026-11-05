@@ -225,5 +225,10 @@ export type ContactSearch = { query: string };
 
 export type ContactSearchHandler = (search: ContactSearch) => Contact[] | Promise<Contact[]>;
 
-/** Error codes on a rejected SDK promise. */
-export type ErrorCode = 'INVALID_TOKEN' | 'NOT_INITIALIZED' | 'INVALID_REQUEST' | 'NOT_FOUND';
+/**
+ * Error codes on a rejected SDK promise.
+ *
+ * `USER_CHANGED_RELOAD_REQUIRED`: `init` named a different user while a session was live. Reload the
+ * page, then call `init` for the new user.
+ */
+export type ErrorCode = 'INVALID_TOKEN' | 'NOT_INITIALIZED' | 'INVALID_REQUEST' | 'NOT_FOUND' | 'USER_CHANGED_RELOAD_REQUIRED';

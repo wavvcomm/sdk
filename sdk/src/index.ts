@@ -13,7 +13,7 @@
  */
 
 import * as A from './actions.js';
-import { bootstrap, dispatch, notify } from './transport.js';
+import { authenticate, dispatch, notify } from './transport.js';
 import type {
 	AddContactOptions,
 	AddPhoneOptions,
@@ -50,6 +50,12 @@ export { Target } from './types.js';
  */
 /** What core sends with a contact search: the term, and the callback that answers it. */
 type CoreContactSearch = { search: string; callback: (contacts: unknown[]) => void };
+
+/** What core sends with CONTACT_LINK: the contact the user asked to see, and the callback that closes its panels. */
+type CoreContactLink = {
+	contact?: { contactId?: string };
+	callback?: (response: { displayError?: boolean; closeSettings?: boolean; closeModal?: boolean }) => void;
+};
 
 const toCoreContact = (contact: Contact) => ({
 	contactId: contact.id,
@@ -88,14 +94,16 @@ const listen = <T>(event: string, handler: (payload: T) => void): Listener => {
 /**
  * Authenticate your product and identify the current user.
  *
- * Call once on load, and **again whenever the user changes** — switching accounts, for instance. There
- * is no sign-out: that belongs to the user, not to your product. Calls made before this resolves are
- * buffered and delivered once it does.
+ * Call once on load. Calling it again for the **same** user, with a fresh token, is fine. If the
+ * signed-in user changes, reload the page (or otherwise remount WAVV) before calling `init` for the new
+ * one: WAVV cannot switch users in place, so an `init` naming a different user while a session is live
+ * rejects with `USER_CHANGED_RELOAD_REQUIRED`, and so does every call after it until the page reloads.
+ * There is no sign-out: that belongs to the user, not to your product.
+ *
+ * Calls made before this settles wait for it. They are delivered once it resolves and rejected with the
+ * same reason if it rejects. A second `init` waits for the first to settle.
  */
-export const init = ({ token, server }: InitOptions): Promise<void> => {
-	bootstrap(server);
-	return dispatch(A.AUTH, { token });
-};
+export const init = ({ token, server }: InitOptions): Promise<void> => authenticate(A.AUTH, { token }, server) as Promise<void>;
 
 // ---------------------------------------------------------------------------
 // Manager destinations
@@ -139,7 +147,17 @@ export const show = (target: Target, options: ShowOptions = {}): Promise<void> =
  * see a contact, so it maps to `USER_CLICK`. `OPEN_CONTACT` carries its own reason and passes through.
  */
 export const onOpenContact = (handler: (payload: OpenContact) => void): Listener => {
-	const link = listen<{ contactId: string }>(A.EVENT.CONTACT_LINK, ({ contactId }) => handler({ contactId, reason: 'USER_CLICK' }));
+	// Core wraps the contact and hands over a callback that closes its panels, or shows its "Unable to redirect"
+	// toast, once the host has answered.
+	const link = listen<CoreContactLink>(A.EVENT.CONTACT_LINK, ({ contact, callback }) => {
+		const contactId = contact?.contactId;
+		if (!contactId) {
+			callback?.({ displayError: true });
+			return;
+		}
+		handler({ contactId, reason: 'USER_CLICK' });
+		callback?.({ closeSettings: true, closeModal: true });
+	});
 	const open = listen<OpenContact>(A.EVENT.OPEN_CONTACT, handler);
 	return {
 		remove: () => {
@@ -287,7 +305,7 @@ export const callboards = {
 	 * Boards are read-only to the SDK: starting the dial session is the user's action, and boards are
 	 * built in WAVV rather than through the SDK.
 	 */
-	openBoard: ({ boardId }: OpenBoardOptions): Promise<void> => dispatch(A.START_CALLBOARD, { id: boardId }),
+	openBoard: ({ boardId }: OpenBoardOptions): Promise<void> => dispatch(A.SHOW_CALLBOARDS, { boardId }),
 };
 
 export default { init, show, onOpenContact, onContactSearch, dialer, messenger, callboards };
