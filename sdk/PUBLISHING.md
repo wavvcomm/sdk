@@ -11,7 +11,8 @@ bug the release was waiting on. The publish script asks you to confirm this and 
 without it.
 
 The README sends integrators to **sdk.wavv.com** for documentation, so that site must be live and
-covering this version too.
+covering this version too. The package also carries the same reference as `REFERENCE.md`, which the build
+renders from `api-docs/` (see step 4.2).
 
 ## 1. One-time setup
 
@@ -25,9 +26,10 @@ covering this version too.
 
 ## 2. Bump the version
 
-Set the version in `package.json` only. `src/version.ts` is generated from it by the build
-(`node scripts/release.mjs build` or `verify`) — run one, add a line to the changelog below, and commit both
-files (`check-actions` fails if they differ). Under 0.x, a breaking change bumps the minor (0.1 → 0.2);
+Set the version in `package.json` only. `src/version.ts` and `REFERENCE.md` are generated from it by the
+build (`node scripts/release.mjs build` or `verify`) — run one, add a line to the changelog below, and commit
+`package.json`, `src/version.ts` and `REFERENCE.md` together (`check-actions` fails if the version differs,
+and the mirror's build refuses a `REFERENCE.md` stamped with another version). Under 0.x, a breaking change bumps the minor (0.1 → 0.2);
 anything else bumps the patch.
 
 ## 3. Rehearse
@@ -52,18 +54,23 @@ node scripts/release.mjs publish
 The script:
 
 1. Checks you are logged in to npm.
-2. Checks you are on `master`, `sdk/` has no uncommitted changes, and the `sdk-v<version>` tag is free.
-3. Checks the version is not already on npm.
-4. Cleans `dist/`, runs `check-actions` (every action name still matches `common/src/types.js`), and
-   compiles.
-5. Inspects what `npm pack` would ship and fails on anything other than `package.json`, `README.md`,
-   `LICENSE`, `dist/*.js` and `dist/*.d.ts`. The old modules shipped workspace internals; this stops a
-   repeat.
+2. Cleans `dist/`, runs `check-actions` (every action name still matches `common/src/types.js`),
+   compiles, and renders `REFERENCE.md` with `api-docs/` (the SDK overlay over the public spec, plus
+   `dist/*.d.ts`). `REFERENCE.md` is committed, like `src/version.ts`: the GitHub mirror carries no
+   `api-docs/`, so there the build ships the committed copy, and fails unless it is stamped with this
+   version. Commit it whenever the build changes it.
+3. Inspects what `npm pack` would ship and fails on anything other than `package.json`, `README.md`,
+   `REFERENCE.md`, `LICENSE`, `dist/*.js` and `dist/*.d.ts`, or if any of those is missing. The old modules
+   shipped workspace internals; this stops a repeat.
+4. Checks you are on `master`, `sdk/` has no uncommitted changes, and the `sdk-v<version>` tag is free.
+   This runs after the build, so a `src/version.ts` or `REFERENCE.md` the build just rewrote counts as
+   uncommitted.
+5. Checks the version is not already on npm.
 6. Asks you to confirm core is deployed to production, then to type the version.
 7. Runs `npm publish` (access is public via `publishConfig`).
 8. Creates and pushes the `sdk-v<version>` git tag.
 
-A bare `npm publish` also runs steps 4–5 through `prepublishOnly`, so it cannot ship an unchecked build —
+A bare `npm publish` also runs steps 2–3 through `prepublishOnly`, so it cannot ship an unchecked build —
 but it skips the confirmations and the tag, so use the script.
 
 ## 5. Afterwards
@@ -72,6 +79,11 @@ but it skips the confirmations and the tag, so use the script.
 - The CDN copy is automatic: `https://cdn.jsdelivr.net/npm/@wavv/sdk@<version>/dist/index.js`.
 
 ## Changelog
+
+### 0.1.1
+
+Ships `REFERENCE.md`, the SDK and REST reference in one Markdown file, so coding assistants can read the docs
+from `node_modules` without a login.
 
 ### 0.1.0
 

@@ -1,6 +1,6 @@
 {
 	"name": "@wavv/sdk",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Embed WAVV's dialer, messenger and callboards in your product",
 	"keywords": [
 		"wavv",
@@ -33,6 +33,7 @@
 	},
 	"sideEffects": false,
 	"files": [
+		"REFERENCE.md",
 		"dist/*.js",
 		"dist/*.d.ts"
 	],

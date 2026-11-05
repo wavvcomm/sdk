@@ -6,4 +6,4 @@
  * version in `package.json` instead. `scripts/check-actions.mjs` asserts they match.
  */
 export const MODULE = 'sdk';
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';

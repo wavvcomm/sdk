@@ -2,7 +2,7 @@
 /**
  * Build, verify and publish `@wavv/sdk`.
  *
- *   node scripts/release.mjs build               clean dist, write src/version.ts, check-actions, compile
+ *   node scripts/release.mjs build               clean dist, write src/version.ts, check-actions, compile, write REFERENCE.md
  *   node scripts/release.mjs verify              build, then inspect what `npm pack` would ship
  *   node scripts/release.mjs publish --dry-run   every publish check, then `npm publish --dry-run`
  *   node scripts/release.mjs publish             the real thing: publish to npm and tag `sdk-v<version>`
@@ -10,21 +10,22 @@
  * `verify` also runs as `prepublishOnly`, so a bare `npm publish` cannot ship a stale or unchecked build.
  * See `PUBLISHING.md` for the order of operations — the core deploy comes first.
  *
- * Deliberately dependency-free, because `pnpm install` is not always healthy in this repository.
+ * Dependency-free itself, because `pnpm install` is not always healthy in this repository. The one exception
+ * is `REFERENCE.md`, rendered by `api-docs/` (which needs its `yaml`) when that folder is beside this one.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const SDK = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(resolve(SDK, 'package.json'), 'utf8'));
 const TAG = `sdk-v${pkg.version}`;
 
 /** What a published tarball may contain, and what it must. Anything else is a leak. */
-const ALLOWED = /^(package\.json|README\.md|LICENSE|dist\/[a-z]+\.(js|d\.ts))$/;
-const REQUIRED = ['package.json', 'README.md', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
+const ALLOWED = /^(package\.json|README\.md|REFERENCE\.md|LICENSE|dist\/[a-z]+\.(js|d\.ts))$/;
+const REQUIRED = ['package.json', 'README.md', 'REFERENCE.md', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
 
 const step = (message) => process.stdout.write(`\n▸ ${message}\n`);
 const fail = (message) => {
@@ -69,7 +70,52 @@ const writeVersion = () => {
 	process.stdout.write(`  updated to ${pkg.version}\n`);
 };
 
-const build = () => {
+/**
+ * `REFERENCE.md`: the SDK docs as one Markdown file, shipped in the package so a coding assistant can
+ * read them from `node_modules` — the hosted docs at sdk.wavv.com sit behind a login. Rendered by
+ * `api-docs/` exactly as the hosted Markdown is (the SDK overlay over the public spec, plus `dist/*.d.ts`),
+ * so it must run after compiling.
+ *
+ * Committed, like `src/version.ts`: the GitHub mirror that publishes carries only `sdk/` and
+ * `common/src/types.js`, not `api-docs/`, so there it ships the committed copy instead of rendering one.
+ */
+const writeReference = async () => {
+	step('Writing REFERENCE.md from api-docs and dist/');
+	const path = resolve(SDK, 'REFERENCE.md');
+	const apiDocs = resolve(SDK, '../api-docs/lib');
+	const stamp = `${pkg.name}@${pkg.version}`;
+	if (!existsSync(apiDocs)) {
+		if (!existsSync(path)) fail('No api-docs/ beside sdk/ to render REFERENCE.md, and no committed copy to ship.');
+		// The committed copy cannot be re-rendered here, but it must at least be the one rendered for this version.
+		if (!readFileSync(path, 'utf8').split(/\s/).includes(stamp)) {
+			fail(`REFERENCE.md was not rendered for ${stamp}. Run \`node scripts/release.mjs build\` in storm and commit REFERENCE.md.`);
+		}
+		process.stdout.write(`  no api-docs/ here; shipping the committed copy (${stamp})\n`);
+		return;
+	}
+	const load = (name) => import(pathToFileURL(resolve(apiDocs, name)).href);
+	let modules;
+	try {
+		modules = await Promise.all([load('spec.mjs'), load('sdk-model.mjs'), load('render-markdown.mjs')]);
+	} catch (error) {
+		fail(`Could not load api-docs to render REFERENCE.md (run \`pnpm install\` at the repo root):\n  ${error.message}`);
+	}
+	const [{ loadDoc }, { collectSdk }, { renderMarkdown }] = modules;
+
+	const doc = await loadDoc({ scope: 'platform' });
+	// Name the version so a reader can tell the reference matches the package it sits in.
+	doc.info['x-wavv-meta'] = doc.info['x-wavv-meta'].map((meta) => (meta.value === pkg.name ? { ...meta, value: stamp } : meta));
+	const next = renderMarkdown(doc, collectSdk(resolve(SDK, 'dist')));
+	const current = existsSync(path) ? readFileSync(path, 'utf8') : null;
+	if (current === next) {
+		process.stdout.write('  unchanged\n');
+		return;
+	}
+	writeFileSync(path, next);
+	process.stdout.write(`  updated (${(Buffer.byteLength(next) / 1024).toFixed(1)} kB) — commit it\n`);
+};
+
+const build = async () => {
 	step('Cleaning dist/');
 	rmSync(resolve(SDK, 'dist'), { recursive: true, force: true });
 
@@ -80,6 +126,8 @@ const build = () => {
 
 	step('Compiling');
 	run(findTsc(), ['-p', 'tsconfig.build.json']);
+
+	await writeReference();
 };
 
 const inspectPack = () => {
@@ -101,8 +149,8 @@ const inspectPack = () => {
 	if (missing.length) fail(`The package is missing:\n  ${missing.join('\n  ')}`);
 };
 
-const verify = () => {
-	build();
+const verify = async () => {
+	await build();
 	inspectPack();
 	process.stdout.write(`\n✓ ${pkg.name}@${pkg.version} is built and ships only what it should.\n`);
 };
@@ -124,6 +172,9 @@ const publish = async ({ dryRun }) => {
 		if (!dryRun) fail(problem);
 		process.stdout.write(`  ! ${problem}\n`);
 	}
+
+	// Build first: it rewrites src/version.ts and REFERENCE.md, so the clean-tree check below must see what it wrote.
+	await verify();
 
 	step('Checking git');
 	const branch = read('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -148,8 +199,6 @@ const publish = async ({ dryRun }) => {
 	}
 	process.stdout.write(`  ${pkg.version} is free\n`);
 
-	verify();
-
 	if (dryRun) {
 		step('npm publish --dry-run');
 		run('npm', ['publish', '--dry-run', '--ignore-scripts']);
@@ -173,7 +222,7 @@ const publish = async ({ dryRun }) => {
 
 const [command, ...flags] = process.argv.slice(2);
 
-if (command === 'build') build();
-else if (command === 'verify') verify();
+if (command === 'build') await build();
+else if (command === 'verify') await verify();
 else if (command === 'publish') await publish({ dryRun: flags.includes('--dry-run') });
 else fail('Usage: node scripts/release.mjs build | verify | publish [--dry-run]');
